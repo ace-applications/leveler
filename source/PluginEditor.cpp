@@ -157,8 +157,10 @@ void LevelerAudioProcessorEditor::timerCallback()
     advisorDirection.setColour (juce::Label::textColourId,
         r.direction == Advisor::none ? c (Lvl::kGrey) : c (Lvl::kPurple));
     advisorExplanation.setText (juce::String (r.explanation), juce::dontSendNotification);
-    const char* tier = r.dynDb < 12.0f ? "LOW" : r.dynDb < 18.0f ? "MODERATE" : "HIGH";
-    advisorDyn.setText (juce::String::formatted ("%s  %.1f dB", tier, (double) r.dynDb),
+    // NB: no String::formatted("%s") — on Windows that routes through swprintf and
+    // mangles narrow char* into CJK mojibake
+    const juce::String tier = r.dynDb < 12.0f ? "LOW" : r.dynDb < 18.0f ? "MODERATE" : "HIGH";
+    advisorDyn.setText (tier + "  " + juce::String (r.dynDb, 1) + " dB",
                         juce::dontSendNotification);
     repaint();
   #endif
@@ -184,7 +186,8 @@ void LevelerAudioProcessorEditor::paint (juce::Graphics& g)
     // knob dB readout (purple while the engine drives it)
     const double v = knob.getValue();
     const juce::String readout = v == 0.0 ? "0.0 dB"
-        : juce::String::formatted ("%s%.1f dB", v < 0 ? "-" : "+", std::abs (v));
+        : (v < 0 ? juce::String ("-") : juce::String ("+"))
+              + juce::String (std::abs (v), 1) + " dB";
     const bool autoLive = proc.isAutoOn();
     g.setFont (f (interSemi, 18.0f));
     g.setColour (autoLive ? c (Lvl::kPurple) : c (Lvl::kWhite));
@@ -197,13 +200,13 @@ void LevelerAudioProcessorEditor::paint (juce::Graphics& g)
         g.setFont (f (interSemi, 11.0f));
         g.setColour (c (Lvl::kPurple));
         g.drawText ("AUTO MODE — GRAB KNOB TO OVERRIDE",
-                    getLocalBounds().removeFromTop (340.0f).removeFromBottom (24.0f),
+                    getLocalBounds().removeFromTop (330.0f).removeFromBottom (20.0f),
                     juce::Justification::centred);
     }
 
     // advisor confidence bar (under the panel)
     const auto r = proc.advisorResult();
-    auto bar = juce::Rectangle<float> (60.0f, 520.0f, 300.0f, 4.0f);
+    auto bar = juce::Rectangle<float> (60.0f, 546.0f, 300.0f, 4.0f);
     g.setColour (c (Lvl::kHair));
     g.fillRoundedRectangle (bar, 2.0f);
     if (r.direction != Advisor::none && r.confidence > 0.0f)
@@ -220,6 +223,7 @@ void LevelerAudioProcessorEditor::resized()
     area.removeFromTop (56.0f); // title
     knob.setBounds (area.removeFromTop (248.0f).withSizeKeepingCentre (224, 224));
 
+    area.removeFromTop (26.0f); // auto-mode hint strip (painted in paint())
     auto row = area.removeFromTop (52.0f).withSizeKeepingCentre (300, 32);
     bypassButton.setBounds (row.removeFromLeft (140));
   #if LEVELER_BUILD_PRO_DSP
