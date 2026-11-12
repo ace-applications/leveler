@@ -1,0 +1,8 @@
+build/
+.build/
+.vs/
+.vscode/
+*.user
+_compile_commands/
+_freebuff/
+_JUCE/
