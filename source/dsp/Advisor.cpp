@@ -82,8 +82,8 @@ void Advisor::evaluate (double t)
         int raw = none;
         // Intentionally dynamic material must not false-positive: transient EXCESS
         // above the body level (not raw spread) is what marks peak dominance.
-        if (plr >= 12.0f && transientExcess >= 10.0f)       raw = left;
-        else if (tailFrac >= 0.25f && plr >= 12.0f)         raw = right;
+        if (plr >= 8.0f && transientExcess >= 7.0f)         raw = left;
+        else if (tailFrac >= 0.25f && plr >= 8.0f)          raw = right;
 
         if (raw == pendingDirection)
         {
@@ -93,8 +93,8 @@ void Advisor::evaluate (double t)
                     pendingSince = t;
                 r.direction = raw;
                 r.confidence = raw == left
-                    ? std::clamp ((plr - 12.0f) / 12.0f + (transientExcess - 10.0f) / 12.0f, 0.15f, 1.0f)
-                    : std::clamp ((tailFrac - 0.25f) / 0.5f + (plr - 12.0f) / 10.0f, 0.15f, 1.0f);
+                    ? std::clamp ((plr - 8.0f) / 8.0f + (transientExcess - 7.0f) / 8.0f, 0.15f, 1.0f)
+                    : std::clamp ((tailFrac - 0.25f) / 0.5f + (plr - 8.0f) / 10.0f, 0.15f, 1.0f);
                 r.explanation = raw == left ? "High transient dominance detected"
                                             : "Sustained tail buried";
             }

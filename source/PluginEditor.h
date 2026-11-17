@@ -50,6 +50,7 @@ private:
     PillToggle bypassButton { "BYPASS" };
     juce::AudioProcessorValueTreeState::ButtonAttachment bypassAttachment {
         proc.apvts, "bypass", bypassButton };
+    juce::Label readout;
 
 #if LEVELER_BUILD_PRO_DSP
     PillToggle autoButton { "AUTO" };

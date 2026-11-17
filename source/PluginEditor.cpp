@@ -15,7 +15,8 @@ LevelKnob::LevelKnob()
 {
     setRange (-12.0, 12.0, 0.5);
     setTextBoxStyle (NoTextBox, false, 0, 0);
-    setSliderStyle (RotaryVerticalDrag);
+    setSliderStyle (juce::Slider::Rotary); // circular mouse motion around the hub
+    setRotaryParameters ({ 1.25f * pi, 2.75f * pi, true }); // 270° sweep, gap at bottom
 }
 
 void LevelKnob::paint (juce::Graphics& g)
@@ -24,10 +25,12 @@ void LevelKnob::paint (juce::Graphics& g)
     const float cx = bounds.getCentreX(), cy = bounds.getCentreY();
     const float radius = std::min (bounds.getWidth(), bounds.getHeight()) * 0.5f;
     const float arcR = radius - 8.0f;
-    const float start = pi * 0.75f, end = pi * 2.25f; // 270° sweep, 0 dB at top
+    // JUCE Path arc angles are clockwise from 12 o'clock: x = cx + r·sin(a), y = cy - r·cos(a)
+    // Same convention as Slider::Rotary drag (handleRotaryDrag), so arc/pointer/drag agree.
+    const float start = 1.25f * pi, end = 2.75f * pi; // bottom-left → up left → top → down right → bottom-right
     const float frac = (float) ((getValue() + 12.0) / 24.0);
     const float angle = start + frac * (end - start);
-    const float zero = start + 0.5f * (end - start);
+    const float zero = 2.0f * pi; // top
 
     juce::Path track;
     track.addCentredArc (cx, cy, arcR, arcR, 0.0f, start, end, true);
@@ -38,7 +41,8 @@ void LevelKnob::paint (juce::Graphics& g)
     if (std::abs (getValue()) > 0.01)
     {
         juce::Path value;
-        value.addCentredArc (cx, cy, arcR, arcR, 0.0f, zero, angle, frac < 0.5f);
+        value.addCentredArc (cx, cy, arcR, arcR, 0.0f,
+                             std::min (zero, angle), std::max (zero, angle), true);
         g.setColour (c (Lvl::kPurple));
         g.strokePath (value, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
@@ -47,8 +51,8 @@ void LevelKnob::paint (juce::Graphics& g)
     g.setColour (c (Lvl::kGrey).withAlpha (0.5f));
     g.drawEllipse (cx - 2.0f, cy - arcR - 2.0f, 4.0f, 4.0f, 1.0f);
 
-    juce::Point<float> tip (cx + std::cos (angle) * (arcR - 10.0f), cy + std::sin (angle) * (arcR - 10.0f));
-    juce::Point<float> back (cx + std::cos (angle) * (arcR - 26.0f), cy + std::sin (angle) * (arcR - 26.0f));
+    juce::Point<float> tip (cx + std::sin (angle) * (arcR - 10.0f), cy - std::cos (angle) * (arcR - 10.0f));
+    juce::Point<float> back (cx + std::sin (angle) * (arcR - 26.0f), cy - std::cos (angle) * (arcR - 26.0f));
     g.setColour (c (Lvl::kWhite));
     g.drawLine ({ back, tip }, 3.0f);
 
@@ -94,6 +98,21 @@ LevelerAudioProcessorEditor::LevelerAudioProcessorEditor (LevelerAudioProcessor&
     addAndMakeVisible (knob);
     addAndMakeVisible (bypassButton);
     bypassButton.onClick = [&] { repaint(); };
+
+    readout.setFont (f (interSemi, 18.0f));
+    readout.setJustificationType (juce::Justification::centred);
+    readout.setColour (juce::Label::textColourId, c (Lvl::kWhite));
+    readout.setInterceptsMouseClicks (false, false);
+    readout.setText ("0.0 dB", juce::dontSendNotification);
+    addAndMakeVisible (readout);
+    knob.onValueChange = [this]
+    {
+        const double v = knob.getValue();
+        readout.setText (v == 0.0 ? juce::String ("0.0 dB")
+            : (v < 0 ? juce::String ("-") : juce::String ("+"))
+              + juce::String (std::abs (v), 1) + " dB",
+            juce::dontSendNotification);
+    };
 
     knob.onDragStart = [this]
     { // grabbing the knob while Auto is on returns control to manual (brief §6)
@@ -149,6 +168,14 @@ void LevelerAudioProcessorEditor::timerCallback()
         if (std::abs (cur - manual) > 0.05)
             knob.setValue (cur + (manual - cur) * 0.35, juce::dontSendNotification);
     }
+    readout.setColour (juce::Label::textColourId, autoOn ? c (Lvl::kPurple) : c (Lvl::kWhite));
+    { // auto intensity moves don't fire onValueChange (dontSendNotification) — mirror text here
+        const double v = knob.getValue();
+        readout.setText (v == 0.0 ? juce::String ("0.0 dB")
+            : (v < 0 ? juce::String ("-") : juce::String ("+"))
+              + juce::String (std::abs (v), 1) + " dB",
+            juce::dontSendNotification);
+    }
 
     const auto r = proc.advisorResult();
     advisorDirection.setText (r.direction == Advisor::left ? "LEFT"
@@ -183,23 +210,14 @@ void LevelerAudioProcessorEditor::paint (juce::Graphics& g)
                            juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize,
                            false);
 
-    // knob dB readout (purple while the engine drives it)
-    const double v = knob.getValue();
-    const juce::String readout = v == 0.0 ? "0.0 dB"
-        : (v < 0 ? juce::String ("-") : juce::String ("+"))
-              + juce::String (std::abs (v), 1) + " dB";
-    const bool autoLive = proc.isAutoOn();
-    g.setFont (f (interSemi, 18.0f));
-    g.setColour (autoLive ? c (Lvl::kPurple) : c (Lvl::kWhite));
-    g.drawText (readout, getLocalBounds().removeFromTop (312.0f).removeFromBottom (44.0f),
-                juce::Justification::centred);
+    // knob dB readout is a Label (readout) — direct g.drawText ghosted under FL scaling
 
   #if LEVELER_BUILD_PRO_DSP
-    if (autoLive)
+    if (proc.isAutoOn())
     {
         g.setFont (f (interSemi, 11.0f));
         g.setColour (c (Lvl::kPurple));
-        g.drawText ("AUTO MODE — GRAB KNOB TO OVERRIDE",
+        g.drawText ("AUTO MODE - GRAB KNOB TO OVERRIDE",
                     getLocalBounds().removeFromTop (330.0f).removeFromBottom (20.0f),
                     juce::Justification::centred);
     }
@@ -222,14 +240,19 @@ void LevelerAudioProcessorEditor::resized()
     auto area = getLocalBounds();
     area.removeFromTop (56.0f); // title
     knob.setBounds (area.removeFromTop (248.0f).withSizeKeepingCentre (224, 224));
+    readout.setBounds (getLocalBounds().removeFromTop (312.0f).removeFromBottom (44.0f));
 
     area.removeFromTop (26.0f); // auto-mode hint strip (painted in paint())
     auto row = area.removeFromTop (52.0f).withSizeKeepingCentre (300, 32);
-    bypassButton.setBounds (row.removeFromLeft (140));
   #if LEVELER_BUILD_PRO_DSP
+    bypassButton.setBounds (row.removeFromLeft (140));
     row.removeFromLeft (20);
     autoButton.setBounds (row.removeFromLeft (140));
+  #else
+    bypassButton.setBounds (row.withSizeKeepingCentre (140, 32)); // centered in Free
+  #endif
 
+  #if LEVELER_BUILD_PRO_DSP
     auto panel = area.removeFromTop (160.0f).reduced (32, 8);
     advisorTitle.setBounds (panel.removeFromTop (16.0f));
     advisorDirection.setBounds (panel.removeFromTop (28.0f));
